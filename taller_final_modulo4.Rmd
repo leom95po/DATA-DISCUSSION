@@ -1,0 +1,269 @@
+---
+title: "Trabajo entregable final, Módulo 4: Modelos predictivos 2, Programa: experto en Ciencias de Datos"
+author: "Ing. Leonel Morales"
+date: '2022-09-17'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Presentación del Problema
+
+Se tiene una data llamada "germancredit", donde se encuentra información de los clientes de un banco que son malos o buenos pagadores, ademas, se tiene información de su edad, numero de tarjetas de crédito, cantidad de letras pagadas. Se desea construir dos modelos logit y Probit, de donde se sirva para pronosticar. En Efecto;
+\begin{itemize}
+\item duration:= es la variable que representa el numéro de años del crédito.
+\item installment:= representa a la variable: número de cuotas pagadas.
+\item age:= edad del cliente.
+\item cards:= número de tarjetas de crédito que posee el cliente.
+\end{itemize}
+
+### Solución
+
+```{r librerias,echo=F,message=FALSE,warning=FALSE,comment=""}
+library(dplyr)
+library(lmtest)
+library(car)
+library(caret)
+library(lattice)
+library(carData)
+library(ggplot2)
+library(zoo)
+library(utils)
+library(readr)
+library(utils)
+library(strucchange)
+library(GGally)
+library(moments)
+library(lmtest)
+library(forecast)
+library(foreign)
+library(gmodels)
+library(ResourceSelection)
+library(ROCR)
+library(Epi)
+library(ggplot2)
+library(readxl)
+library(dplyr)
+library(readxl)
+library(memisc)
+library(haven)
+library(QuantPsyc)
+library(gridExtra)
+library(reshape2)
+library(plotly)
+```
+Cargamos la base de datos en R-studio y la delimitamos,
+
+```{r datos, echo=T,message=FALSE,warning=FALSE,comment=""}
+germancredit <- read.csv("C:/Users/Admin/Desktop/germancredit.csv")
+attach(germancredit)
+credit<-germancredit[c("Default","duration","installment","age","cards")]
+
+```
+A continuación presentamos el modelo no lineal dado por:
+\begin{align*}
+Default_i=duration_i+installment_i+age_i+cards_i,\hspace{0.5cm}\forall\,i\in[1,1000],
+\end{align*}
+de donde la variable Default es categorica es decir, es $1$ si es un buen pagador y es $0$ si es un mal pagador.
+
+## Ajuste de los modelos
+Empezamos con el ajuste del modelo logit, esto es:
+
+```{r modelo,echo=TRUE,message=FALSE,warning=FALSE,comment=""}
+logitModel<-glm(Default~.,family = binomial(link = "logit"),data = credit)
+summary(logitModel)
+```
+Ahora bien, puesto que es un modelo no lineal no se puede interpretar directamente los resultados, pero notemos que la variable "cards" no es significativa, en consecuencia, se puede construir otro modelos sin esta variable y analizar.
+
+De manera similar, ajustamos un modelo Probit:
+
+```{r modelopro,echo=TRUE,message=FALSE,warning=FALSE,comment=""}
+probitModel<-glm(Default~.,family = binomial(link = "probit"),data = credit)
+summary(probitModel)
+```
+Nótese que, de manera similar al Logit, éste modelo tiene una variable no significativa que es "cards".
+
+## Contraste Hosmer y Lemeshow para los dos modelos
+```{r contraste,echo=F,message=F,warning=FALSE,comment=""}
+hlogit<-hoslem.test(credit$Default,fitted(logitModel),g=10)
+hlogit
+
+hprobit<-hoslem.test(credit$Default,fitted(probitModel),g=10)
+hprobit
+```
+es evidente que el $p-valor<0.05$ para los dos contrastes, esto significa que los dos modelos tienen un buen ajuste, más aún, se debe validar este supuesto con más contrastes. Para el efecto usamos la matriz de Confusión.
+
+## Matriz de Confusión
+
+Hallamos la media de los valores ajustados de cada modelo y a esos valores los denotamos como el umbral para los dos modelos respectivamente.
+
+```{r umbrales,echo=T,message=F,warning=FALSE,comment=""}
+umb<-mean(logitModel$fitted.values)
+umb
+umbPro<-mean(probitModel$fitted.values)
+umbPro
+```
+de modo que, la matriz de confusion para Logit  es dada por:
+
+```{r confusiones,echo=F,message=F,warning=FALSE,comment=""}
+ClassLog(logitModel,credit$Default,cut = umbPro)
+ClassLog(probitModel,credit$Default,cut = umbPro)
+```
+Podemos observar que el porcentaje de clasificación para logit es de $60.8%$, mientras que para el logit es de $60.5$, entonces podemos tener una breve idea que estos modelo no funcionarían pues no daría una buena predicción.
+
+## Evaluando la capacidad predictiva a traves de otros criterios (ROC) para Logit
+
+
+```{r rocestar,echo=F,message=F,warning=FALSE,comment=""}
+ROC(form = Default~duration+amount+installment+age,plot = "ROC",data = credit)
+
+```
+
+el gráfico muestra que el área bajo la curva entre especificidad y sensitividad es de $0.646$, lo ideal sería que permanezca en un intervalo mayor o igual a $0.80$, por tanto se confirma que el modelo no es bueno para una predicción.
+
+Por otro lado hallamos el punto de corte óptimo real o umbral para el modelo Logit.
+
+```{r um,echo=F,message=F,warning=FALSE,comment=""}
+ROC(form = Default~.,plot = "sp",data = credit)
+```
+**Observación.** Para el modelo logit, coincide el valor del umbral hallado por la media de los valores ajustados siendo 0.30
+
+## Evaluando la capacidad predictiva curva ROC para Probit
+
+
+```{r pre,include=F,message=F,warning=FALSE,comment=""}
+prediccion<-prediction(probitModel$fitted.values,credit$Default)
+perfor<-performance(prediccion,"tpr","fpr")
+```
+
+
+```{r gra,echo=FALSE,message=F,warning=FALSE,comment=""}
+plot(perfor)
+abline(0,1,col="blue")
+
+```
+
+**Observación.**El área bajo la curva ROC no se acerca a 1, en  consecuencia Probit no es un buen modelo. 
+
+### Curvas de precisión
+
+```{r predd,include=FALSE,message=F,warning=FALSE,comment=""}
+perfo1<-performance(prediccion,measure = "prec",x.measure = "rec")
+```
+\vspace{-0.5cm}
+```{r perfo,echo=FALSE,message=F,warning=FALSE,comment=""}
+plot(perfo1) 
+```
+Vemos que la curva no cae lentamente, así tenemos un indicio que este modelo no funcionará.
+
+### Punto de corte óptimo para Probit
+
+```{r cort,include=FALSE,message=F,warning=FALSE,comment=""}
+
+
+perfo2<-performance(prediccion,"sens","spec")
+sensi<-slot(perfo2,"y.values"[[1]])
+espe<-slot(perfo2,"x.values"[[1]])
+alf<-slot(perfo2,"alpha.values"[[1]])
+
+
+matri<-data.frame(alf,sensi,espe)
+
+names(matri)[1]<-"alf"
+names(matri)[2]<-"sensi"
+names(matri)[3]<-"espe"
+
+
+me<-melt(matri,id=c("alf"))
+
+```
+
+```{r punto,echo=FALSE,message=F,warning=FALSE,comment=""}
+punto_probit<-ggplot(me,aes(alf,value,group=variable,colour=variable))+
+  geom_line(size=1.2)+
+  labs(title = "Punto de corte óptimo para PROBIT")
+punto_probit
+
+```
+Usando la función **ggplotly** de la librería plotly, recuperamos el valor del umbral, siendo, $0.29115213$, ya además cambiamos el umbral en la matriz de confusión solo para el probit, pues para el logit es el mismo valor.
+```{r cla,echo=FALSE,message=F,warning=FALSE,comment=""}
+
+ClassLog(probitModel,credit$Default,cut = 0.29115213)
+
+```
+
+## Comparación de los dos modelos
+
+```{r comp,echo=FALSE,message=F,warning=FALSE,comment=""}
+memisc::mtable(logitModel,probitModel,digits = 6,sdigits = 3,
+               summary.stats = c("Nagelkerke R-sq.","Deviance","AIC","BIC","N"))
+
+```
+Así, según AIC, BIC, N, el modelo probit es mejor, pero debido a la medida de los **overall** de los dos modelos se concluye que ninguno sirve.
+
+### Cambiando el umbral para los dos modelos
+
+
+```{r camumb,echo=FALSE,message=F,warning=FALSE,comment=""}
+umbr<-0.45
+
+ClassLog(logitModel,credit$Default,cut=umbr)
+
+ClassLog(probitModel,credit$Default,cut = umbr)
+```
+
+Cambiando el umbral de manera arbitraria a $0.45$, se observa que clasifica mejor y los overall suben, no obstante, siguen siendo malos modelos de predicción pues $overall\in [0.80, 0.95]$.
+
+## Pronósticando
+Se usan los dos modelos para pronósticos pero notemos que ninguno de los dos está bien definido. Suponga que se requiere predecir la probabilidad de que sea buen pagador si, la duración del préstamo es de $10$ años, número de cuotas pagadas es de $2$, la edad es de: $24$ años, y con un número de tarjetas de crédito igual a $3$.
+
+```{r pro,echo=T,message=F,warning=FALSE,comment=""}
+predic<-data.frame(duration=10,installment=2,age=24,cards=3)
+predict(logitModel,newdata = predic,type = "response")
+predict(probitModel,newdata = predic,type = "response")
+```
+Suponga que se requiere predecir la probabilidad de que sea buen pagador si, la duración del préstamo es de $6$ años, número de cuotas pagadas es de $24$, la edad es de: $43$ años, y con un número de tarjetas de crédito igual a $2$.
+```{r produ,echo=T,message=F,warning=FALSE,comment=""}
+predic2<-data.frame(duration=6,installment=24,age=43,cards=2)
+predict(logitModel,newdata = predic2,type = "response")
+```
+
+## Conlclusiones
+\begin{itemize}
+\item La probabilidad de que sea un buen pagador, para la priemra predicción, según estos parametros es del 19.21 por ciento, mientras que para probit es de 18.90.
+\item Para la segunda predicción se tiene que, la probabilidad que sea un buen pagador es del 78.57 por ciento para Logit.
+\item Ningun modelo es bueno para predecir pues el porcentaje de clasificación está por debajo del 80 por ciento.
+\item Quitando la variable que no es significativa **cards** se llega a que ninguno de los dos modelos tampoco es bueno.
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
